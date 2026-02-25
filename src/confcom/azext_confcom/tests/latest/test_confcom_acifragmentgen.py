@@ -261,6 +261,8 @@ _SINGLE_MANIFEST_CONFIG = {
 @patch("azext_confcom.oras_proxy.manifest_fetch", return_value=_MANIFEST_LIST_RESPONSE)
 def test_get_image_platforms_manifest_list(mock_fetch):
     """Multi-platform manifest lists return all known platforms."""
+    # Note that when we use mocks, we must (re-)import extension modules at call
+    # time for the mocks to work, due to reloading in conftest.py run_on_wheel.
     from azext_confcom.oras_proxy import get_image_platforms
     platforms = get_image_platforms("myregistry.io/myimage:latest")
     assert set(platforms) == {"linux/amd64", "linux/arm64"}
@@ -309,6 +311,8 @@ def test_get_image_platforms_unknown_platform_excluded(mock_fetch):
        return_value=["linux/amd64", "linux/arm64"])
 def test_oras_attach_multiarch_error(mock_platforms, mock_run):
     """oras_attach raises SystemExit when multiple platforms are detected and no platform specified."""
+    # Note that when we use mocks, we must (re-)import extension modules at call
+    # time for the mocks to work, due to reloading in conftest.py run_on_wheel.
     from azext_confcom.command.fragment_attach import oras_attach
     mock_fragment = MagicMock()
     mock_fragment.name = "/tmp/fragment.cose"
@@ -404,15 +408,43 @@ def test_acifragmentgen_fragment_attach_with_explicit_platform(docker_image, cer
         assert f.read() == signed_fragment
 
 
-@patch("azext_confcom.custom.oras_proxy.get_image_platforms",
-       return_value=["linux/amd64", "linux/arm64"])
-def test_acifragmentgen_upload_fragment_multiarch_error(mock_platforms, docker_image, cert_chain):
+def test_acifragmentgen_upload_fragment_multiarch_error(docker_image, cert_chain):
     """acifragmentgen --upload-fragment exits with an error for multiarch images."""
+    # Note that when we use mocks, we must (re-)import extension modules at call
+    # time for the mocks to work, due to reloading in conftest.py run_on_wheel.
+    from azext_confcom.custom import acifragmentgen_confcom as _acifragmentgen
     image_ref, spec_file_path = docker_image
 
-    with pytest.raises(SystemExit):
+    with patch("azext_confcom.custom.oras_proxy.get_image_platforms",
+               return_value=["linux/amd64", "linux/arm64"]):
+        with pytest.raises(SystemExit):
+            with tempfile.TemporaryDirectory() as temp_dir:
+                _acifragmentgen(
+                    image_name=None,
+                    tar_mapping_location=None,
+                    key=os.path.join(cert_chain, "intermediateCA", "private", "ec_p384_private.pem"),
+                    chain=os.path.join(cert_chain, "intermediateCA", "certs", "www.contoso.com.chain.cert.pem"),
+                    minimum_svn=None,
+                    input_path=spec_file_path,
+                    svn="1",
+                    namespace="contoso",
+                    feed="test-feed",
+                    outraw=True,
+                    upload_fragment=True,
+                    output_filename=os.path.relpath(os.path.join(temp_dir, "fragment.rego"), os.getcwd()),
+                    out_signed_fragment=False,
+                )
+
+
+def test_acifragmentgen_upload_fragment_no_platform_fallback(docker_image, cert_chain):
+    """acifragmentgen --upload-fragment falls back to linux/amd64 when platform detection fails."""
+    from azext_confcom.custom import acifragmentgen_confcom as _acifragmentgen
+    image_ref, spec_file_path = docker_image
+
+    with patch("azext_confcom.custom.oras_proxy.get_image_platforms", return_value=[]), \
+         patch("azext_confcom.custom.oras_proxy.attach_fragment_to_image") as mock_attach:
         with tempfile.TemporaryDirectory() as temp_dir:
-            acifragmentgen_confcom(
+            _acifragmentgen(
                 image_name=None,
                 tar_mapping_location=None,
                 key=os.path.join(cert_chain, "intermediateCA", "private", "ec_p384_private.pem"),
@@ -428,33 +460,9 @@ def test_acifragmentgen_upload_fragment_multiarch_error(mock_platforms, docker_i
                 out_signed_fragment=False,
             )
 
-
-@patch("azext_confcom.custom.oras_proxy.attach_fragment_to_image")
-@patch("azext_confcom.custom.oras_proxy.get_image_platforms", return_value=[])
-def test_acifragmentgen_upload_fragment_no_platform_fallback(mock_platforms, mock_attach, docker_image, cert_chain):
-    """acifragmentgen --upload-fragment falls back to linux/amd64 when platform detection fails."""
-    image_ref, spec_file_path = docker_image
-
-    with tempfile.TemporaryDirectory() as temp_dir:
-        acifragmentgen_confcom(
-            image_name=None,
-            tar_mapping_location=None,
-            key=os.path.join(cert_chain, "intermediateCA", "private", "ec_p384_private.pem"),
-            chain=os.path.join(cert_chain, "intermediateCA", "certs", "www.contoso.com.chain.cert.pem"),
-            minimum_svn=None,
-            input_path=spec_file_path,
-            svn="1",
-            namespace="contoso",
-            feed="test-feed",
-            outraw=True,
-            upload_fragment=True,
-            output_filename=os.path.relpath(os.path.join(temp_dir, "fragment.rego"), os.getcwd()),
-            out_signed_fragment=False,
-        )
-
-    mock_attach.assert_called_once()
-    _, kwargs = mock_attach.call_args
-    assert kwargs.get("platform") == "linux/amd64"
+        mock_attach.assert_called_once()
+        _, kwargs = mock_attach.call_args
+        assert kwargs.get("platform") == "linux/amd64"
 
 
 def test_acifragmentgen_fragment_attach(docker_image, cert_chain, capsysbinary):
