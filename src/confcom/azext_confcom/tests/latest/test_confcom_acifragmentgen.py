@@ -355,7 +355,26 @@ def test_oras_attach_explicit_platform(mock_run):
     assert "application/cose-x509+rego" in " ".join(cmd)
 
 
-# ── Integration tests using local registry ─────────────────────────────────
+@patch("azext_confcom.command.fragment_attach.subprocess.run")
+@patch("azext_confcom.command.fragment_attach.oras_proxy.get_image_platforms",
+       return_value=["linux/amd64"])
+def test_oras_attach_auto_detected_platform(mock_platforms, mock_run):
+    """When no platform is supplied, the detected platform is passed to oras attach."""
+    from azext_confcom.command.fragment_attach import oras_attach
+    mock_run.return_value = MagicMock(returncode=0)
+    mock_fragment = MagicMock()
+    mock_fragment.name = "/tmp/fragment.cose"
+
+    oras_attach(
+        signed_fragment=mock_fragment,
+        manifest_tag="myregistry.io/myimage:latest",
+    )
+
+    mock_run.assert_called_once()
+    cmd = mock_run.call_args[0][0]
+    assert "--platform" in cmd
+    assert "linux/amd64" in cmd
+    assert "application/cose-x509+rego" in " ".join(cmd)
 
 
 def test_acifragmentgen_fragment_attach_with_explicit_platform(docker_image, cert_chain, capsysbinary):
@@ -385,6 +404,57 @@ def test_acifragmentgen_fragment_attach_with_explicit_platform(docker_image, cer
         platform="linux/amd64",
     )
 
+    oras_result = json.loads(subprocess.run(
+        ["oras", "discover", image_ref, "--format", "json"],
+        stdout=subprocess.PIPE,
+        check=True,
+    ).stdout)
+
+    if "referrers" in oras_result:
+        fragment_ref = oras_result["referrers"][0]["reference"]
+    elif oras_result.get("manifests") and oras_result["manifests"][0].get("artifactType") == "application/x-ms-ccepolicy-frag":
+        fragment_ref = oras_result["manifests"][0]["reference"]
+    else:
+        raise AssertionError(f"{oras_result=}")
+
+    fragment_path = json.loads(subprocess.run(
+        ["oras", "pull", fragment_ref, "--format", "json", "-o", tempfile.gettempdir()],
+        check=True,
+        stdout=subprocess.PIPE,
+    ).stdout)["files"][0]["path"]
+
+    with open(fragment_path, "rb") as f:
+        assert f.read() == signed_fragment
+
+
+def test_acifragmentgen_fragment_attach_without_platform(docker_image, cert_chain, capsysbinary):
+    """fragment_attach without --platform auto-detects the platform and attaches successfully."""
+    image_ref, spec_file_path = docker_image
+
+    acifragmentgen_confcom(
+        image_name=None,
+        tar_mapping_location=None,
+        key=os.path.join(cert_chain, "intermediateCA", "private", "ec_p384_private.pem"),
+        chain=os.path.join(cert_chain, "intermediateCA", "certs", "www.contoso.com.chain.cert.pem"),
+        minimum_svn=None,
+        input_path=spec_file_path,
+        svn="1",
+        namespace="contoso",
+        feed="test-feed",
+        out_signed_fragment=True,
+    )
+
+    signed_fragment = capsysbinary.readouterr()[0]
+    signed_fragment_io = io.BytesIO(signed_fragment)
+    signed_fragment_io.name = "<stdin>"
+
+    # Call without platform — platform is auto-detected from the registry
+    fragment_attach(
+        signed_fragment=signed_fragment_io,
+        manifest_tag=image_ref,
+    )
+
+    # Confirm the fragment was successfully attached
     oras_result = json.loads(subprocess.run(
         ["oras", "discover", image_ref, "--format", "json"],
         stdout=subprocess.PIPE,
