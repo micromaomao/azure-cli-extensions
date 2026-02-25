@@ -475,79 +475,6 @@ def test_acifragmentgen_fragment_attach_with_explicit_platform(
         assert f.read() == signed_fragment
 
 
-def test_acifragmentgen_fragment_attach_without_platform(
-    docker_image, cert_chain, capsysbinary
-):
-    """fragment_attach without --platform auto-detects the platform and attaches successfully."""
-    image_ref, spec_file_path = docker_image
-
-    acifragmentgen_confcom(
-        image_name=None,
-        tar_mapping_location=None,
-        key=os.path.join(
-            cert_chain, "intermediateCA", "private", "ec_p384_private.pem"
-        ),
-        chain=os.path.join(
-            cert_chain, "intermediateCA", "certs", "www.contoso.com.chain.cert.pem"
-        ),
-        minimum_svn=None,
-        input_path=spec_file_path,
-        svn="1",
-        namespace="contoso",
-        feed="test-feed",
-        out_signed_fragment=True,
-    )
-
-    signed_fragment = capsysbinary.readouterr()[0]
-    signed_fragment_io = io.BytesIO(signed_fragment)
-    signed_fragment_io.name = "<stdin>"
-
-    # Call without platform — platform is auto-detected from the registry
-    fragment_attach(
-        signed_fragment=signed_fragment_io,
-        manifest_tag=image_ref,
-    )
-
-    # Confirm the fragment was successfully attached
-    oras_result = json.loads(
-        subprocess.run(
-            ["oras", "discover", image_ref, "--format", "json"],
-            stdout=subprocess.PIPE,
-            check=True,
-        ).stdout
-    )
-
-    if "referrers" in oras_result:
-        fragment_ref = oras_result["referrers"][0]["reference"]
-    elif (
-        oras_result.get("manifests")
-        and oras_result["manifests"][0].get("artifactType")
-        == "application/x-ms-ccepolicy-frag"
-    ):
-        fragment_ref = oras_result["manifests"][0]["reference"]
-    else:
-        raise AssertionError(f"{oras_result=}")
-
-    fragment_path = json.loads(
-        subprocess.run(
-            [
-                "oras",
-                "pull",
-                fragment_ref,
-                "--format",
-                "json",
-                "-o",
-                tempfile.gettempdir(),
-            ],
-            check=True,
-            stdout=subprocess.PIPE,
-        ).stdout
-    )["files"][0]["path"]
-
-    with open(fragment_path, "rb") as f:
-        assert f.read() == signed_fragment
-
-
 def test_acifragmentgen_upload_fragment_multiarch_error(docker_image, cert_chain):
     """acifragmentgen --upload-fragment exits with an error for multiarch images."""
     # Note that when we use mocks, we must (re-)import extension modules at call
@@ -628,7 +555,7 @@ def test_acifragmentgen_upload_fragment_no_platform_fallback(docker_image, cert_
         assert kwargs.get("platform") == "linux/amd64"
 
 
-def test_acifragmentgen_fragment_attach(docker_image, cert_chain, capsysbinary):
+def test_acifragmentgen_fragment_attach_without_platform(docker_image, cert_chain, capsysbinary):
 
     image_ref, spec_file_path = docker_image
 
