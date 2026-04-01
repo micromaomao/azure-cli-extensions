@@ -19,7 +19,6 @@ from azext_confcom.template_util import (
 from knack.log import get_logger
 
 SHA256_PREFIX = "@sha256:"
-FRAGMENT_DISCOVERY_PLATFORM = "linux/amd64"
 
 logger = get_logger(__name__)
 
@@ -269,10 +268,10 @@ def pull(
     return out_filename
 
 
-def pull_all_image_attached_fragments(image):
+def pull_all_image_attached_fragments(image, platform):
     # TODO: be smart about if we're pulling a fragment directly or trying to discover them from an image tag
     # TODO: this will be for standalone fragments
-    image_exists, fragments = discover(image, platform=FRAGMENT_DISCOVERY_PLATFORM)
+    image_exists, fragments = discover(image, platform)
     fragment_contents = []
     feeds = []
     if image_exists:
@@ -382,16 +381,16 @@ def attach_fragment_to_image(image_name: str, filename: str, platform: Optional[
     print(f"Fragment attached to image '{image_name}' with Digest:{digest}")
 
 
-def generate_imports_from_image_name(image_name: str, minimum_svn: str) -> List[dict]:
+def generate_imports_from_image_name(image: str, platform: str, minimum_svn: str) -> List[dict]:
     cose_proxy = CoseSignToolProxy()
-    image_exists, fragment_hashes = discover(image_name, platform=FRAGMENT_DISCOVERY_PLATFORM)
+    image_exists, fragment_hashes = discover(image, platform)
     import_list = []
 
     if image_exists:
         for fragment_hash in fragment_hashes:
             filename = ""
             try:
-                filename = pull(image_name, fragment_hash)
+                filename = pull(image, fragment_hash)
                 import_statement = cose_proxy.generate_import_from_path(filename, minimum_svn)
                 if import_statement not in import_list:
                     import_list.append(import_statement)

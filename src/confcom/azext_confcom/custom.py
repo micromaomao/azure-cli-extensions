@@ -181,14 +181,14 @@ def acipolicygen_confcom(
     if include_fragments:
         logger.info("Including fragments in the policy")
         fragment_policy_list = []
-        container_names = []
+        container_image_and_platforms = []
         fragment_imports = []
         for policy in container_group_policies:
             fragment_imports.extend(policy.get_fragments())
             for container in policy.get_images():
-                container_names.append(container.get_container_image())
+                container_image_and_platforms.append((container.get_container_image(), container.get_platform()))
         # get all the fragments that are being used in the policy
-        fragment_policy_list = get_all_fragment_contents(container_names, fragment_imports)
+        fragment_policy_list = get_all_fragment_contents(container_image_and_platforms, fragment_imports)
         for policy in container_group_policies:
             policy.set_fragment_contents(fragment_policy_list)
 
@@ -346,11 +346,11 @@ def acifragmentgen_confcom(
     # get all of the fragments that are being used in the policy
     # and associate them with each container group
     fragment_policy_list = []
-    container_names = []
+    container_image_and_platforms = []
     fragment_imports = policy.get_fragments()
     for container in policy.get_images():
-        container_names.append(container.get_container_image())
-    fragment_policy_list = get_all_fragment_contents(container_names, fragment_imports)
+        container_image_and_platforms.append((container.get_container_image(), container.get_platform()))
+    fragment_policy_list = get_all_fragment_contents(container_image_and_platforms, fragment_imports)
     policy.set_fragment_contents(fragment_policy_list)
     policy.populate_policy_content_for_all_images(
         individual_image=bool(image_name), tar_mapping=tar_mapping

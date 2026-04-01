@@ -4,7 +4,7 @@
 # --------------------------------------------------------------------------------------------
 
 import copy
-from typing import List
+from typing import List, Tuple
 
 import yaml
 from azext_confcom import config, oras_proxy
@@ -46,7 +46,7 @@ def combine_fragments_with_policy(all_fragments):
 
 
 def get_all_fragment_contents(
-    image_names: List[str],
+    image_and_platforms: List[Tuple[str, str]],
     fragment_imports: List[dict],
 ) -> List[str]:
     # was getting errors with pass by reference so we need to copy it
@@ -59,10 +59,10 @@ def get_all_fragment_contents(
 
     all_fragments_contents = []
     # get all the image attached fragments
-    for image in image_names:
+    for image, platform in image_and_platforms:
         # TODO: make sure this doesn't error out if the images aren't in a registry.
         # This will probably be in the discover function
-        image_attached_fragments, feeds = oras_proxy.pull_all_image_attached_fragments(image)
+        image_attached_fragments, feeds = oras_proxy.pull_all_image_attached_fragments(image, platform)
         for fragment, feed in zip(image_attached_fragments, feeds):
             all_feeds = [
                 case_insensitive_dict_get(temp_fragment, config.POLICY_FIELD_CONTAINERS_ELEMENTS_REGO_FRAGMENTS_FEED)

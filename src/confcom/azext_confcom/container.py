@@ -676,6 +676,9 @@ class ContainerImage:
     def get_seccomp_profile_sha256(self) -> str:
         return self._seccomp_profile_sha256
 
+    def get_platform(self) -> str:
+        return self._platform
+
     def set_extra_environment_rules(self, rules: Dict) -> None:
         self._extraEnvironmentRules = rules
 
